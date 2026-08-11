@@ -1,0 +1,153 @@
+# SkillMapper
+
+An agentic RAG system that compares resumes against job descriptions, retrieves supporting evidence via hybrid search, and produces structured evaluation results with human-in-the-loop escalation for low-confidence cases. Exposed as an MCP server with 5 tools, plus a Streamlit reviewer UI.
+
+Runs entirely locally against [Ollama](https://ollama.com) (`llama3.1:8b` for generation, `nomic-embed-text` for embeddings) — no paid API keys required.
+
+## Architecture
+
+```
+                         ┌─────────────────────────┐
+                         │      MCP Server          │
+                         │  (5 tools, stdio)         │
+                         └────────────┬─────────────┘
+                                      │
+              ┌───────────────────────┼────────────────────────┐
+              │                       │                        │
+   ┌──────────▼──────────┐  ┌─────────▼─────────┐   ┌──────────▼──────────┐
+   │ search_documents      │  │ compare_resume_to_job│   │ lookup_evaluation_  │
+   │ retrieve_evidence     │  │  → LangGraph agent   │   │ result / capture_   │
+   │  → hybrid retriever   │  │                        │   │ reviewer_feedback   │
+   └──────────┬────────────┘  └─────────┬──────────────┘   │  → SQLite repo      │
+              │                          │                  └──────────┬───────────┘
+              │              ┌───────────▼────────────┐               │
+              │              │ retrieve → compare →     │               │
+              │              │ confidence_check          │◄──────────────┘
+              │              │  ├─ retry (widen k) ───┐  │
+              │              │  ├─ escalate ──────────┼──┼──► Streamlit reviewer app
+              │              │  └─ finalize            │  │   (approve/override/reject,
+              │              └────────────┬────────────┘  │    feeds back into SQLite)
+              │                            │               │
+   ┌──────────▼────────────────────────────▼───────────────▼──────┐
+   │      Hybrid retriever: BM25 (rank_bm25) + Chroma (dense)       │
+   │      fused with Reciprocal Rank Fusion                          │
+   └──────────┬─────────────────────────────────────────────────────┘
+              │
+   ┌──────────▼──────────────────────────────────────────┐
+   │  Ingestion: LlamaIndex SentenceSplitter run per-section  │
+   │  (section boundaries detected first) → embedded via     │
+   │  Ollama (nomic-embed-text, content-hash cached, async)  │
+   └───────────────────────────────────────────────────────┘
+```
+
+### Why these choices
+
+- **Custom LangGraph `StateGraph`, not `create_react_agent`.** The agent needs an explicit retry counter (widening `k` on each attempt, not repeating the same call) and a terminal escalate-to-human path. The prebuilt ReAct agent's fixed internal routing doesn't expose hooks for either.
+- **Hybrid retrieval (BM25 + dense), fused with Reciprocal Rank Fusion.** Semantic similarity alone can miss an exact certification name or tool acronym (e.g. "CKA") buried in a long skills list; BM25 catches the exact string, dense catches paraphrases. Both signals are fused rather than picking one.
+- **Raw `chromadb` + `rank_bm25` instead of `llama-index-vector-stores-chroma` / `QueryFusionRetriever`.** LlamaIndex is used only for its chunking primitives. Retrieval and fusion are hand-written so the RRF math and metadata filtering are unit-testable and debuggable directly, instead of living behind a framework abstraction — the same "don't treat the pipeline as a black box" principle that drove the chunking fix below.
+- **Metadata-aware, section-first chunking.** See the debugging story.
+
+## The debugging story
+
+The pipeline was fully orchestrated and technically functional, but wasn't producing good evaluations. Rather than guessing at the LLM prompt or the agent's routing logic, each stage was isolated and tested independently. Running RAGAS against the RAG layer alone (not the full comparison agent) showed low **faithfulness** and **context recall** — a retrieval/chunking problem, not an orchestration problem.
+
+Inspecting the chunker: naive whole-document sentence-splitting was cutting across resume section boundaries — merging the tail of an "Experience" entry into the start of a "Skills" list, or vice versa, whenever the two were short enough to fit in one chunk window. The fix was metadata-aware chunking: split the document into sections *first* (via heading detection), then run the sentence splitter independently within each section, so a chunk can never straddle two sections by construction.
+
+This is reproduced as a real, re-runnable comparison in this repo — not just asserted. `scripts/run_chunking_comparison.py` ingests the same corpus into two Chroma collections (naive vs. metadata-aware), runs the identical 12-question test set through both, and scores each with RAGAS under the same local judge:
+
+<!-- RAGAS_COMPARISON_TABLE -->
+
+*(Table above generated by `uv run scripts/run_chunking_comparison.py`. See [Limitations](#limitations) for why an 8B local judge's absolute scores aren't comparable to GPT-4-judged benchmarks — the delta under a fixed judge is the meaningful number here.)*
+
+A synthetic unit test also encodes the bug directly: `tests/unit/test_naive_chunking.py::test_naive_chunker_straddles_section_boundary` constructs a fixture where naive chunking demonstrably merges two sections into one chunk, and `tests/unit/test_chunking.py::test_chunks_never_straddle_a_section_boundary` proves the metadata-aware chunker cannot do this.
+
+## The optimization story
+
+Two mechanisms were implemented for real and benchmarked honestly — including where the numbers didn't match initial assumptions:
+
+**Embedding cache** (content-hash + query/document-role keyed, via `diskcache`): a clear, dramatic win. Re-embedding the same 8 texts with a warm cache took **essentially 0s vs. 2.7s cold** (measured with `scripts/run_benchmark.py`) — a >6000x speedup, since a cache hit skips the Ollama round-trip entirely.
+
+**Async parallel embedding** (`asyncio.gather` + `asyncio.Semaphore` fan-out, used by the agent's `retrieve` node when it queries once per JD requirement): measured **no speedup** in this environment (serial and concurrency=4 both took ~2.4s for 8 texts). This local Ollama install processes embedding requests serially by default (`OLLAMA_NUM_PARALLEL` is typically 1 unless explicitly reconfigured), so concurrent requests queue rather than overlap. The code path is real and correctly bounded (verified in `tests/unit/test_embedding_cache.py`), but on this machine the cache — not the parallelism — is what actually reduces latency. This is reported as measured, not adjusted to match a target number.
+
+**Storage**: comparing the two Chroma collections on this repo's demo corpus (8 resumes + 3 job descriptions):
+
+| Collection | Chunks | Text bytes | Embedding bytes | Total |
+|---|---|---|---|---|
+| naive | 25 | 16.4KB | 75.0KB | 91.4KB |
+| metadata-aware | 54 | 14.7KB | 162.0KB | 176.7KB |
+
+Metadata-aware chunking here uses **more** storage than naive, not less — because respecting section boundaries prevents the splitter from merging short adjacent sections into one chunk, producing more (smaller) chunks and therefore more embeddings. This is the real, honest tradeoff: the retrieval-quality gain from section-aware chunking (see the RAGAS table above) is paid for partly in embedding storage, not free. (Regenerate with `uv run scripts/run_benchmark.py`; requires `scripts/ingest.py` to have populated both collections first.)
+
+## Quickstart
+
+```bash
+# 1. Install Ollama (https://ollama.com) and pull the two models used
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+
+# 2. Install dependencies
+uv sync
+
+# 3. Ingest the synthetic resume/JD corpus (both chunking variants)
+uv run scripts/ingest.py
+
+# 4. Run the agent once, end to end
+uv run scripts/run_agent.py resume-01-senior-swe-backend job-01-swe-backend
+
+# 5. Run the MCP server (stdio transport)
+uv run scripts/run_mcp_server.py
+
+# 6. Run the Streamlit reviewer app
+uv run streamlit run src/skillmapper/review_app/app.py
+```
+
+### MCP tools
+
+| Tool | Purpose |
+|---|---|
+| `search_documents` | Hybrid (BM25 + dense) search over ingested resume/JD chunks |
+| `retrieve_evidence` | Resume evidence supporting one specific job requirement |
+| `compare_resume_to_job` | Full agent run: retrieve → compare → retry/escalate → structured `EvaluationResult` |
+| `capture_reviewer_feedback` | Record a human reviewer's decision (same path the Streamlit app uses) |
+| `lookup_evaluation_result` | Query stored evaluations by id, resume, job, or status |
+
+`compare_resume_to_job` can take **30 seconds to a few minutes** on a local 8B model (retrieval + generation, plus up to 2 retries). It short-circuits to a cached completed result on repeat calls unless `force_rerun=True`. The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is a good way to exercise all 5 tools manually:
+
+```bash
+npx @modelcontextprotocol/inspector uv run scripts/run_mcp_server.py
+```
+
+## Testing
+
+```bash
+uv run pytest                 # fast unit suite, no Ollama required (default)
+uv run pytest -m ollama       # + integration tests against a real local Ollama
+```
+
+Unit tests cover: section splitting, chunking boundary-safety (including a test that documents the naive-chunking bug directly), Reciprocal Rank Fusion math and metadata post-filtering, embedding cache hit/miss + query/document-role discrimination, LangGraph retry/escalation routing (stubbed LLM, real k-widening-per-retry assertions), SQLite repository round-trips, MCP tool functions, and RAGAS report formatting.
+
+## Repo layout
+
+```
+src/skillmapper/
+  models.py              Resume, JobDescription, Chunk, EvaluationResult, ReviewerFeedback
+  config.py               pydantic-settings (Ollama host/models, thresholds, paths)
+  ingestion/               section splitting, metadata-aware + naive chunkers, ingest pipeline
+  retrieval/               embeddings (cached), Chroma, BM25, hybrid RRF fusion
+  agent/                   LangGraph state/nodes/graph, LLM wrapper, runtime wiring
+  storage/                 SQLite repository (evaluations, reviewer feedback)
+  mcp_server/              FastMCP-style server (mcp.server.mcpserver.MCPServer) + 5 tools
+  review_app/              Streamlit reviewer UI
+  eval/                    RAGAS harness, testset, chunking comparison, benchmark, report formatting
+scripts/                   CLI entry points for each of the above
+tests/unit/                fast, fully mocked
+tests/integration/         marked slow/ollama, require a real local Ollama
+data/synthetic/            8 synthetic resumes + 3 job descriptions (author-generated, fictitious)
+```
+
+## Limitations
+
+- **RAGAS judge is a local 8B model, not GPT-4.** Scores are noisier and not directly comparable to published GPT-4-judged benchmarks. The chunking-comparison story is built around the *delta* between naive and metadata-aware chunking under the same fixed judge, which is judge-independent in a way absolute scores aren't.
+- **`compare_resume_to_job` is slow** (30s-minutes) on local hardware — there's no async job-polling API, just a SQLite short-circuit on repeat calls.
+- **Single-user SQLite**, no auth on the Streamlit app — fine for a local portfolio demo, not for multi-tenant use.
+- **Synthetic corpus is small** (8 resumes, 3 JDs) — enough to demonstrate the retrieval/chunking/agent mechanics honestly, not a claim about performance at scale.

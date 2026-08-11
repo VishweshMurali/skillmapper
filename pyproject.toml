@@ -1,0 +1,49 @@
+[project]
+name = "skillmapper"
+version = "0.1.0"
+description = "Agentic RAG resume-to-job evaluator: MCP server, hybrid retrieval (ChromaDB + BM25), custom LangGraph agent with human-in-the-loop escalation, RAGAS-evaluated RAG layer."
+authors = [
+    { name = "Vishwesh Murali", email = "vishweshmurali@gmail.com" }
+]
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "llama-index-core>=0.12",
+    "llama-index-embeddings-ollama>=0.5",
+    "llama-index-llms-ollama>=0.5",
+    "chromadb>=0.5.23",
+    "langgraph>=0.2.60",
+    "langchain-ollama>=0.2.2",
+    "langchain-core>=0.3",
+    "ragas>=0.2.10",
+    # ragas' llms/base.py does an eager, unguarded `from langchain_community.chat_models.vertexai
+    # import ChatVertexAI` — that submodule was removed in langchain-community 0.4.x, so pin below
+    # the breaking version until upstream ragas fixes the import.
+    "langchain-community<0.4",
+    "rank-bm25>=0.2.2",
+    "diskcache>=5.6.3",
+    "streamlit>=1.40",
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-mock>=3.14",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: long-running tests (e.g. full RAGAS runs)",
+    "ollama: requires a running local Ollama instance with models pulled",
+]
+addopts = "-m \"not slow and not ollama\""
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
