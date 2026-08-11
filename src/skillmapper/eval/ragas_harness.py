@@ -21,6 +21,7 @@ with warnings.catch_warnings():
     )
 
 from skillmapper.agent.llm import get_llm
+from skillmapper.agent.nodes import BASE_K
 from skillmapper.config import settings
 from skillmapper.eval.testset import TESTSET, QAItem
 from skillmapper.ingestion.pipeline import bm25_path_for
@@ -29,7 +30,15 @@ from skillmapper.retrieval.bm25_index import BM25Index
 from skillmapper.retrieval.embeddings import Embedder
 from skillmapper.retrieval.hybrid import HybridRetriever
 
-ANSWER_TOP_K = 5
+# Deliberately the same k the agent's `retrieve` node actually uses
+# (skillmapper.agent.nodes.BASE_K) -- this eval exists to compare chunking
+# strategies *as deployed*, not under an eval-only retrieval budget. Note
+# that k means something different per chunker: naive chunking maxes out
+# at 3 chunks/doc on this corpus, so k=5 always returns the full document;
+# metadata-aware chunking's one-chunk-minimum-per-section design maxes out
+# at 7, so k=5 can truncate it. That asymmetry is real production behavior,
+# not an eval bug -- see the README's chunking-comparison section.
+ANSWER_TOP_K = BASE_K
 
 QA_PROMPT_TEMPLATE = """Answer the question using ONLY the context below. Be concise (1-3 sentences).
 

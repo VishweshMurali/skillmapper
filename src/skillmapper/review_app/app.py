@@ -1,18 +1,27 @@
 from __future__ import annotations
 
+import json
 import re
+from datetime import datetime
 from pathlib import Path
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 
 from skillmapper.agent.runtime import AgentRuntime
 from skillmapper.config import settings
+from skillmapper.eval.benchmark import run_all_benchmarks
+from skillmapper.eval.chunking_comparison import run_comparison
+from skillmapper.eval.report import METRIC_NAMES
+from skillmapper.eval.testset import TESTSET
 from skillmapper.ingestion.chunking import chunk_document
 from skillmapper.ingestion.loaders import load_all_job_descriptions, load_all_resumes
 from skillmapper.ingestion.naive_chunking import chunk_document_naive
 from skillmapper.ingestion.pipeline import bm25_path_for, delete_document, ingest_sync
 from skillmapper.models import EvaluationResult, ReviewerFeedback
 from skillmapper.retrieval.bm25_index import BM25Index
+from skillmapper.retrieval.hybrid import RRF_K
 from skillmapper.retrieval.vector_store import (
     METADATA_COLLECTION,
     NAIVE_COLLECTION,
@@ -20,6 +29,19 @@ from skillmapper.retrieval.vector_store import (
     get_collection,
 )
 from skillmapper.storage import repository
+
+# Palette slots 1 (blue) and 2 (orange) from the design system's validated
+# categorical order -- worst adjacent CVD delta 9.1 (light) / 8.4 (dark),
+# well clear of the colorblind-safety floor. Light/dark pairs, picked at
+# render time from st.context.theme.type since Streamlit doesn't expose a
+# CSS hook for embedded Vega-Lite charts to react to the theme toggle.
+_NAIVE_COLOR = {"light": "#2a78d6", "dark": "#3987e5"}
+_META_COLOR = {"light": "#eb6834", "dark": "#d95926"}
+_INK = {"light": "#52514e", "dark": "#c3c2b7"}
+_GRID = {"light": "#e1e0d9", "dark": "#2c2c2a"}
+_AXIS = {"light": "#c3c2b7", "dark": "#383835"}
+
+_VARIANT_ORDER = ["Naive chunking", "Metadata-aware chunking"]
 
 st.set_page_config(page_title="SkillMapper Reviewer", layout="wide")
 
@@ -263,6 +285,27 @@ def _render_retrieval_tab():
         "tools use -- against the live metadata-aware collection."
     )
 
+    with st.expander("What's an RRF score?"):
+        st.markdown(
+            "Every hit is scored by **Reciprocal Rank Fusion**, not by similarity "
+            "directly. BM25 (keyword match) and the dense Chroma search (semantic "
+            "similarity) each rank the corpus independently; a chunk's fused score is "
+            f"then $\\sum \\frac{{1}}{{k + rank}}$ over whichever of those two ranked "
+            f"lists it appears in, with $k = {RRF_K}$ and `rank` starting at 1 for the "
+            "top hit of each list.\n\n"
+            "A few things that follow from that formula:\n"
+            "- **It's a rank score, not a percentage or a probability.** The best "
+            f"possible value (rank 1 in both lists) is only $2/({RRF_K}+1) \\approx "
+            f"{2 / (RRF_K + 1):.3f}$ -- so scores in the low hundredths are normal, "
+            "not a sign of a weak match.\n"
+            "- **Only comparable within one query's results**, ranking hits against "
+            "each other -- not across different queries or different `top_k` values.\n"
+            "- A chunk found by only one of the two retrievers still scores (it just "
+            "doesn't get the second list's contribution), which is why a distinctive "
+            "keyword (a cert name, a specific tool) can out-rank a chunk that's only "
+            "semantically related."
+        )
+
     query = st.text_input(
         "Query", key="retrieval_query", placeholder="e.g. Kubernetes production experience"
     )
@@ -343,6 +386,197 @@ def _render_score_tab(resumes: dict, jobs: dict):
         _render_evaluation_card(last, resumes, jobs, key_prefix="score")
 
 
+def _load_chunking_comparison(path: Path) -> tuple[pd.DataFrame | None, float | None]:
+    """Parses the markdown table `scripts/run_chunking_comparison.py` writes
+    (see `skillmapper.eval.report.format_comparison_table`) back into a
+    DataFrame, rather than re-running the ~20-60 min RAGAS eval on every
+    page load.
+    """
+    if not path.exists():
+        return None, None
+    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip().startswith("|")]
+    rows = [[cell.strip() for cell in ln.strip("|").split("|")] for ln in lines]
+    header, _separator, *data = rows
+    df = pd.DataFrame(data, columns=header)
+    for col in header[1:]:
+        df[col] = df[col].astype(float)
+    return df, path.stat().st_mtime
+
+
+def _load_benchmark_results(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _comparison_to_long(df: pd.DataFrame) -> pd.DataFrame:
+    long_df = df.melt(
+        id_vars=["Metric"], value_vars=_VARIANT_ORDER, var_name="Variant", value_name="Score"
+    )
+    long_df["Metric"] = long_df["Metric"].str.replace("_", " ").str.title()
+    return long_df
+
+
+def _build_ragas_chart(long_df: pd.DataFrame, theme: str) -> alt.Chart:
+    metric_order = [m.replace("_", " ").title() for m in METRIC_NAMES]
+    ink, grid, axis = _INK[theme], _GRID[theme], _AXIS[theme]
+
+    base = alt.Chart(long_df).encode(
+        x=alt.X(
+            "Metric:N", title=None, sort=metric_order,
+            axis=alt.Axis(labelAngle=0, labelColor=ink, domainColor=axis, tickColor=axis),
+        ),
+        xOffset=alt.XOffset("Variant:N", sort=_VARIANT_ORDER),
+        y=alt.Y(
+            "Score:Q", title="RAGAS score (0-1, local judge)",
+            scale=alt.Scale(domain=[0, 1]),
+            axis=alt.Axis(labelColor=ink, titleColor=ink, gridColor=grid, domainColor=axis),
+        ),
+        color=alt.Color(
+            "Variant:N",
+            scale=alt.Scale(domain=_VARIANT_ORDER, range=[_NAIVE_COLOR[theme], _META_COLOR[theme]]),
+            legend=alt.Legend(title=None, orient="top", labelColor=ink),
+        ),
+        tooltip=[
+            alt.Tooltip("Metric:N"),
+            alt.Tooltip("Variant:N"),
+            alt.Tooltip("Score:Q", format=".3f"),
+        ],
+    )
+    bars = base.mark_bar(size=28, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+    labels = base.mark_text(dy=-8, fontSize=11, color=ink).encode(text=alt.Text("Score:Q", format=".3f"))
+    return (
+        (bars + labels)
+        .properties(height=340, background="transparent")
+        .configure_view(strokeWidth=0)
+    )
+
+
+def _build_storage_chart(storage: dict, theme: str) -> alt.Chart:
+    ink, grid, axis = _INK[theme], _GRID[theme], _AXIS[theme]
+    df = pd.DataFrame(
+        [
+            {"Variant": "Naive chunking", "Chunks": storage[NAIVE_COLLECTION]["n_chunks"]},
+            {"Variant": "Metadata-aware chunking", "Chunks": storage[METADATA_COLLECTION]["n_chunks"]},
+        ]
+    )
+    chart = (
+        alt.Chart(df)
+        .mark_bar(size=36, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+        .encode(
+            x=alt.X(
+                "Variant:N", title=None, sort=_VARIANT_ORDER,
+                axis=alt.Axis(labelAngle=0, labelLimit=200, labelColor=ink, domainColor=axis, tickColor=axis),
+            ),
+            y=alt.Y("Chunks:Q", title="Chunks", axis=alt.Axis(labelColor=ink, titleColor=ink, gridColor=grid, domainColor=axis)),
+            color=alt.Color(
+                "Variant:N",
+                scale=alt.Scale(domain=_VARIANT_ORDER, range=[_NAIVE_COLOR[theme], _META_COLOR[theme]]),
+                legend=None,
+            ),
+            tooltip=[alt.Tooltip("Variant:N"), alt.Tooltip("Chunks:Q")],
+        )
+    )
+    labels = chart.mark_text(dy=-8, fontSize=11, color=ink).encode(text="Chunks:Q")
+    return (chart + labels).properties(height=220, background="transparent").configure_view(strokeWidth=0)
+
+
+def _render_evaluation_tab():
+    st.subheader("Model evaluation -- RAGAS")
+    st.caption(
+        f"Scores the RAG layer itself (hybrid retrieval + answer generation) against a "
+        f"{len(TESTSET)}-question test set -- not the verdict-producing comparison agent. "
+        "This is the reproducible half of the chunking-strategy story from the README: "
+        "does metadata-aware (section-bounded) chunking retrieve and ground answers better "
+        "than naive whole-document splitting, under an identical local judge?"
+    )
+
+    theme = st.context.theme.type or "light"
+    comparison_path = settings.cache_dir / "chunking_comparison.md"
+    benchmark_path = settings.cache_dir / "benchmark_results.json"
+
+    df, generated_at = _load_chunking_comparison(comparison_path)
+
+    if df is None:
+        st.info(
+            "No RAGAS results cached yet -- run `uv run scripts/run_chunking_comparison.py` "
+            "or trigger it below."
+        )
+    else:
+        by_metric = df.set_index("Metric")
+        cols = st.columns(4)
+        for col, metric in zip(cols, METRIC_NAMES):
+            row = by_metric.loc[metric]
+            col.metric(
+                metric.replace("_", " ").title(),
+                f"{row['Metadata-aware chunking']:.3f}",
+                delta=f"{row['Delta']:+.3f} vs naive",
+                help=f"Naive chunking scored {row['Naive chunking']:.3f}",
+            )
+
+        st.caption(
+            f"Cached {datetime.fromtimestamp(generated_at):%Y-%m-%d %H:%M} · local "
+            "`llama3.1:8b` judge -- treat these as directional deltas between the two "
+            "chunkers under the *same* judge, not absolute or GPT-4-comparable scores."
+        )
+
+        st.altair_chart(_build_ragas_chart(_comparison_to_long(df), theme), use_container_width=True)
+
+        with st.expander("View raw scores"):
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+    with st.expander("Re-run the RAGAS comparison"):
+        st.warning(
+            "Runs the full QA pipeline against both Chroma collections and re-judges every "
+            "answer with the local model -- **20-60+ minutes** on consumer hardware, and "
+            "blocks this page until it finishes."
+        )
+        confirm = st.checkbox("I understand this will take a while", key="ragas_rerun_confirm")
+        if st.button("Run now", key="ragas_rerun_btn", disabled=not confirm):
+            with st.spinner("Running RAGAS against naive and metadata-aware collections..."):
+                table = run_comparison()
+                comparison_path.parent.mkdir(parents=True, exist_ok=True)
+                comparison_path.write_text(table, encoding="utf-8")
+            st.success("Done -- refreshing.")
+            st.rerun()
+
+    st.divider()
+    st.subheader("Retrieval & embedding benchmarks")
+    st.caption("Measured on this repo's demo corpus (see README for methodology) -- not scaled claims.")
+
+    bench = _load_benchmark_results(benchmark_path)
+    if bench is None:
+        st.info("No benchmark results cached yet -- trigger a run below.")
+    else:
+        bcols = st.columns(3)
+        cache, parallel = bench["cache"], bench["parallelism"]
+        bcols[0].metric(
+            "Embedding cache speedup", f"{cache['speedup']:,.0f}×",
+            help=f"{cache['n_texts']} texts: {cache['cold_seconds']:.2f}s cold -> {cache['warm_seconds'] * 1000:.2f}ms warm",
+        )
+        bcols[1].metric(
+            "Async parallelism speedup", f"{parallel['speedup']:.2f}×",
+            help=f"{parallel['n_texts']} texts, concurrency={parallel['concurrency']}",
+        )
+        naive_kb = bench["storage"][NAIVE_COLLECTION]["total_bytes"] / 1024
+        meta_kb = bench["storage"][METADATA_COLLECTION]["total_bytes"] / 1024
+        bcols[2].metric(
+            "Storage (metadata-aware)", f"{meta_kb:.1f} KB",
+            delta=f"{meta_kb - naive_kb:+.1f} KB vs naive",
+            delta_color="off",
+            help="More chunks from respecting section boundaries -- a deliberate tradeoff, not a regression.",
+        )
+        st.altair_chart(_build_storage_chart(bench["storage"], theme), use_container_width=True)
+
+    if st.button("Re-run benchmarks", key="bench_rerun_btn"):
+        with st.spinner("Benchmarking cache, parallelism, and storage..."):
+            results = run_all_benchmarks()
+            benchmark_path.parent.mkdir(parents=True, exist_ok=True)
+            benchmark_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+        st.success("Done -- refreshing.")
+        st.rerun()
+
+
 def main() -> None:
     resumes, jobs = _load_corpus()
 
@@ -356,8 +590,8 @@ def main() -> None:
     resume_id = None if resume_filter == "(any)" else resume_filter
     job_id = None if job_filter == "(any)" else job_filter
 
-    documents_tab, retrieval_tab, score_tab, queue_tab, history_tab = st.tabs(
-        ["Documents", "Retrieval", "Score", "Escalation Queue", "History"]
+    documents_tab, retrieval_tab, score_tab, eval_tab, queue_tab, history_tab = st.tabs(
+        ["Documents", "Retrieval", "Score", "Model Evaluation", "Escalation Queue", "History"]
     )
 
     with documents_tab:
@@ -368,6 +602,9 @@ def main() -> None:
 
     with score_tab:
         _render_score_tab(resumes, jobs)
+
+    with eval_tab:
+        _render_evaluation_tab()
 
     with queue_tab:
         escalated = repository.query_evaluations(
