@@ -1,0 +1,16 @@
+[project]
+name = "jd-parser"
+version = "0.1.0"
+description = "MCP server: parse_jd -- section-splits a job description into requirement blocks."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "skillmapper",
+]
+
+[tool.uv.sources]
+skillmapper = { workspace = true }
+
+[tool.uv]
+package = false

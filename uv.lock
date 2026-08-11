@@ -10,6 +10,17 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "jd-parser",
+    "rag-router",
+    "ragas-eval",
+    "resume-comparator",
+    "scorer",
+    "skillmapper",
+    "skillmapper-orchestrator",
+]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -929,6 +940,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9c/cb/8ac0172223afbccb63986cc25049b154ecfb5e85932587206f42317be31d/itsdangerous-2.2.0.tar.gz", hash = "sha256:e0050c0b7da1eea53ffaf149c0cfbb5c6e2e2b69c4bef22c81fa6eb73e5f6173", size = 54410, upload-time = "2024-04-16T21:28:15.614Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl", hash = "sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef", size = 16234, upload-time = "2024-04-16T21:28:14.499Z" },
+]
+
+[[package]]
+name = "jd-parser"
+version = "0.1.0"
+source = { virtual = "mcp_servers/jd-parser" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
+    { name = "skillmapper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "skillmapper", editable = "." },
 ]
 
 [[package]]
@@ -2375,6 +2403,23 @@ wheels = [
 ]
 
 [[package]]
+name = "rag-router"
+version = "0.1.0"
+source = { virtual = "mcp_servers/rag-router" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
+    { name = "skillmapper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "skillmapper", editable = "." },
+]
+
+[[package]]
 name = "ragas"
 version = "0.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2403,6 +2448,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d2/bc/3234517692ac0ffae1ec2ec940992e4057844c49ee6c51c07ce385bb98f1/ragas-0.4.3.tar.gz", hash = "sha256:1eb1f61dbc8613ad014fdb8d630cbe9a1caec1ea01664a106993cb756128c001", size = 44029626, upload-time = "2026-01-13T17:48:01.043Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/e0/1fecd22c93d3ed66453cbbdefd05528331af4d33b2b76a370d751231912c/ragas-0.4.3-py3-none-any.whl", hash = "sha256:ef1d75f674c294e9a6e7d8e9ad261b6bf4697dad1c9cbd1a756ba7a6b4849a38", size = 466452, upload-time = "2026-01-13T17:47:59.2Z" },
+]
+
+[[package]]
+name = "ragas-eval"
+version = "0.1.0"
+source = { virtual = "mcp_servers/ragas-eval" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
+    { name = "skillmapper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "skillmapper", editable = "." },
 ]
 
 [[package]]
@@ -2510,6 +2572,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c70d38d31cbfe4cc64f7144dc41f6e4e4b78ecd9f5bb/requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6", size = 206888, upload-time = "2023-05-01T04:11:33.229Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
+]
+
+[[package]]
+name = "resume-comparator"
+version = "0.1.0"
+source = { virtual = "mcp_servers/resume-comparator" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
+    { name = "skillmapper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "skillmapper", editable = "." },
 ]
 
 [[package]]
@@ -2687,6 +2766,23 @@ wheels = [
 ]
 
 [[package]]
+name = "scorer"
+version = "0.1.0"
+source = { virtual = "mcp_servers/scorer" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
+    { name = "skillmapper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "skillmapper", editable = "." },
+]
+
+[[package]]
 name = "setuptools"
 version = "84.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2772,6 +2868,23 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "pytest-mock", specifier = ">=3.14" },
     { name = "ruff", specifier = ">=0.8" },
+]
+
+[[package]]
+name = "skillmapper-orchestrator"
+version = "0.1.0"
+source = { editable = "mcp_servers/orchestrator" }
+dependencies = [
+    { name = "mcp", extra = ["cli"] },
+    { name = "pydantic" },
+    { name = "skillmapper" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "mcp", extras = ["cli"], specifier = ">=1.2.0" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "skillmapper", editable = "." },
 ]
 
 [[package]]

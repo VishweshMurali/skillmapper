@@ -13,6 +13,7 @@ wheels/
 data/chroma/
 data/cache/
 data/store/
+data/sessions/
 
 # Env
 .env

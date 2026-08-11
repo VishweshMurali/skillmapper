@@ -1,0 +1,16 @@
+[project]
+name = "ragas-eval"
+version = "0.1.0"
+description = "MCP server: run_ragas_eval + eval_logs resource -- RAGAS scoring of a logged orchestrator session."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "skillmapper",
+]
+
+[tool.uv.sources]
+skillmapper = { workspace = true }
+
+[tool.uv]
+package = false

@@ -1,0 +1,17 @@
+[project]
+name = "skillmapper-orchestrator"
+version = "0.1.0"
+description = "Host orchestrator: spawns the 5 MCP servers as stdio subprocesses and runs the retry/escalation loop."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "skillmapper",
+]
+
+[tool.uv.sources]
+skillmapper = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"

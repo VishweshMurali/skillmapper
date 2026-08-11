@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     def sqlite_path(self) -> Path:
         return self.data_dir / "store" / "skillmapper.db"
 
+    @property
+    def sessions_dir(self) -> Path:
+        return self.data_dir / "sessions"
+
 
 settings = Settings()
 

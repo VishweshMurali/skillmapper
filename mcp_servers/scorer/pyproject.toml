@@ -1,0 +1,16 @@
+[project]
+name = "scorer"
+version = "0.1.0"
+description = "MCP server: score_comparison -- evidence-coverage-weighted confidence scoring."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "skillmapper",
+]
+
+[tool.uv.sources]
+skillmapper = { workspace = true }
+
+[tool.uv]
+package = false

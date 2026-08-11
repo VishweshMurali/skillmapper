@@ -41,9 +41,27 @@ dev = [
 markers = [
     "slow: long-running tests (e.g. full RAGAS runs)",
     "ollama: requires a running local Ollama instance with models pulled",
+    "requires_index: requires a populated Chroma + BM25 index (run scripts/ingest.py first)",
 ]
 addopts = "-m \"not slow and not ollama\""
 asyncio_mode = "auto"
+pythonpath = [
+    "mcp_servers/rag-router",
+    "mcp_servers/jd-parser",
+    "mcp_servers/resume-comparator",
+    "mcp_servers/scorer",
+    "mcp_servers/ragas-eval",
+]
+
+[tool.uv.workspace]
+members = [
+    "mcp_servers/rag-router",
+    "mcp_servers/jd-parser",
+    "mcp_servers/resume-comparator",
+    "mcp_servers/scorer",
+    "mcp_servers/ragas-eval",
+    "mcp_servers/orchestrator",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.1,<0.13.0"]

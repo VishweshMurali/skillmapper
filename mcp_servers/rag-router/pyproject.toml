@@ -1,0 +1,16 @@
+[project]
+name = "rag-router"
+version = "0.1.0"
+description = "MCP server: decide_retrieval -- hybrid-retrieval routing for one requirement, retry-driven k-widening."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "skillmapper",
+]
+
+[tool.uv.sources]
+skillmapper = { workspace = true }
+
+[tool.uv]
+package = false

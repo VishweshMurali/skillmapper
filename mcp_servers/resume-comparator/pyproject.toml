@@ -1,0 +1,16 @@
+[project]
+name = "resume-comparator"
+version = "0.1.0"
+description = "MCP server: compare_resume_jd -- LLM-judged resume-vs-job comparison over retrieved evidence."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "mcp[cli]>=1.2.0",
+    "pydantic>=2.9",
+    "skillmapper",
+]
+
+[tool.uv.sources]
+skillmapper = { workspace = true }
+
+[tool.uv]
+package = false
