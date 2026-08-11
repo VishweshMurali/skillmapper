@@ -117,6 +117,29 @@ uv run streamlit run src/skillmapper/review_app/app.py
 npx @modelcontextprotocol/inspector uv run scripts/run_mcp_server.py
 ```
 
+### Streamlit app
+
+The Streamlit app (`uv run streamlit run src/skillmapper/review_app/app.py`) is more than a reviewer queue -- it's a working front end onto the whole pipeline:
+
+| Tab | What it does |
+|---|---|
+| **Documents** | Lists every ingested resume/JD with its chunk/section breakdown; upload a new one (file or pasted markdown) or edit an existing one in place. Saving deletes that document's stale chunks, re-ingests it into both Chroma collections, and reloads the in-memory BM25 index -- no restart needed. |
+| **Retrieval** | Runs the same hybrid (BM25 + dense, RRF-fused) retriever the agent uses, with live query/doc-type/doc-id/section filters, so you can see exactly what evidence a given query surfaces. |
+| **Score** | Pick a resume + job description and run the full LangGraph agent on demand; the result renders immediately and is persisted (it also appears in History). |
+| **Escalation Queue / History** | The original reviewer workflow -- approve/override/reject escalated evaluations, browse past runs. |
+
+### Observability (optional): LangSmith
+
+The agent's LLM calls (`langchain_ollama.ChatOllama`) and the hybrid retriever (`@traceable`-wrapped) are LangSmith-instrumented but inert by default. Set in `.env`:
+
+```
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=<your key from smith.langchain.com>
+LANGSMITH_PROJECT=skillmapper
+```
+
+and every `compare_resume_to_job` run produces a nested trace tree in LangSmith: `retrieve` (with the underlying `hybrid_retrieve` call and its RRF-fused hits) → `compare` (the exact prompt and structured-output parse) → `confidence_check` → the retry/escalate routing decision. With `LANGSMITH_TRACING` unset or false, none of this code path runs and there is no dependency on the LangSmith service.
+
 ## Testing
 
 ```bash
@@ -131,13 +154,14 @@ Unit tests cover: section splitting, chunking boundary-safety (including a test 
 ```
 src/skillmapper/
   models.py              Resume, JobDescription, Chunk, EvaluationResult, ReviewerFeedback
-  config.py               pydantic-settings (Ollama host/models, thresholds, paths)
-  ingestion/               section splitting, metadata-aware + naive chunkers, ingest pipeline
-  retrieval/               embeddings (cached), Chroma, BM25, hybrid RRF fusion
+  config.py               pydantic-settings (Ollama host/models, thresholds, paths, optional LangSmith)
+  ingestion/               section splitting, metadata-aware + naive chunkers, ingest/delete pipeline
+  retrieval/               embeddings (cached), Chroma, BM25, hybrid RRF fusion (LangSmith-traceable)
   agent/                   LangGraph state/nodes/graph, LLM wrapper, runtime wiring
   storage/                 SQLite repository (evaluations, reviewer feedback)
   mcp_server/              FastMCP-style server (mcp.server.mcpserver.MCPServer) + 5 tools
-  review_app/              Streamlit reviewer UI
+  review_app/              Streamlit UI: Documents (browse/upload/edit), Retrieval (search tester),
+                             Score (on-demand agent run), Escalation Queue, History
   eval/                    RAGAS harness, testset, chunking comparison, benchmark, report formatting
 scripts/                   CLI entry points for each of the above
 tests/unit/                fast, fully mocked

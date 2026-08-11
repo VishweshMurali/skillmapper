@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from chromadb.api.models.Collection import Collection
+from langsmith import traceable
 
 from skillmapper.retrieval import vector_store
 from skillmapper.retrieval.bm25_index import BM25Index
@@ -63,6 +64,7 @@ class HybridRetriever:
         self.bm25_index = bm25_index
         self.embedder = embedder
 
+    @traceable(name="hybrid_retrieve", run_type="retriever")
     def search(
         self,
         query: str,

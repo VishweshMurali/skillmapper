@@ -54,3 +54,17 @@ async def ingest(
 
 def ingest_sync(collection_name: str, chunker: ChunkerFn = chunk_document) -> list[Chunk]:
     return asyncio.run(ingest(collection_name, chunker))
+
+
+def delete_document(collection_name: str, doc_id: str) -> None:
+    """Remove every chunk belonging to `doc_id` from the named collection.
+
+    `ingest()` upserts by chunk id (`{doc_id}::{section}::{index}`), which
+    is idempotent for unchanged chunks but leaves stale chunks behind if a
+    re-ingested document produces *fewer* chunks than before (e.g. a
+    section got shorter). Callers editing a document in place should
+    delete it first, then re-ingest, so re-ingestion is a true replace.
+    """
+    client = vector_store.get_client()
+    collection = vector_store.get_collection(client, collection_name)
+    collection.delete(where={"doc_id": doc_id})

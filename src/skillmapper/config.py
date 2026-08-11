@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,14 @@ class Settings(BaseSettings):
 
     agent_confidence_threshold: float = 0.65
     agent_max_retries: int = 2
+
+    # Optional: LangSmith tracing of the LangGraph agent workflow (retrieve
+    # -> compare -> confidence_check -> retry/escalate). Off unless both
+    # langsmith_tracing and an API key are set -- no-op otherwise.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str | None = None
+    langsmith_project: str = "skillmapper"
+    langsmith_endpoint: str | None = None
 
     data_dir: Path = REPO_ROOT / "data"
 
@@ -39,3 +48,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# LangChain/LangSmith read tracing config from real process env vars, not
+# from this Settings object -- bridge the two here, once, on import.
+if settings.langsmith_tracing and settings.langsmith_api_key:
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+    os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+    if settings.langsmith_endpoint:
+        os.environ["LANGCHAIN_ENDPOINT"] = settings.langsmith_endpoint
