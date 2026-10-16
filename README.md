@@ -113,13 +113,22 @@ uv run scripts/run_orchestrator.py resume-01-senior-swe-backend job-01-swe-backe
 
 ## The debugging story
 
-The pipeline was fully orchestrated and technically functional, but wasn't producing good evaluations. Rather than guessing at the LLM prompt or the agent's routing logic, each stage was isolated and tested independently. Running RAGAS against the RAG layer alone (not the full comparison agent) showed low **faithfulness** and **context recall** — a retrieval/chunking problem, not an orchestration problem.
+The pipeline was fully orchestrated and technically functional, but wasn't producing good evaluations. Rather than guessing at the LLM prompt or the agent's routing logic, each stage was isolated and tested independently. Running RAGAS against the RAG layer alone (not the full comparison agent) pointed at the retrieval/chunking layer rather than orchestration. (On the final corpus and judges both chunkers score high on faithfulness and recall; see the measured results below, which do not show a decisive end-to-end gain.)
 
 Inspecting the chunker: naive whole-document sentence-splitting was cutting across resume section boundaries — merging the tail of an "Experience" entry into the start of a "Skills" list, or vice versa, whenever the two were short enough to fit in one chunk window. The fix was metadata-aware chunking: split the document into sections *first* (via heading detection), then run the sentence splitter independently within each section, so a chunk can never straddle two sections by construction.
 
 This is reproduced as a real, re-runnable comparison in this repo — not just asserted. `scripts/run_chunking_comparison.py` ingests the same corpus into two Chroma collections (naive vs. metadata-aware), runs the identical 12-question test set through both, and scores each with RAGAS under the same local judge:
 
-Reproduce it with `uv run scripts/ingest.py` followed by `uv run scripts/run_chunking_comparison.py` (takes tens of minutes on a local 8B judge; results are cached under `data/cache/` and shown in the Streamlit app's Model Evaluation tab). Scores are not committed to the repo because they depend on your local hardware and judge model. See [Limitations](#limitations) for why an 8B local judge's absolute scores aren't comparable to GPT-4-judged benchmarks — the delta under a fixed judge is the meaningful number here.
+**Measured results** (12-question test set, 4 RAGAS metrics, identical retrieval and answer pipeline for both collections; local Ollama judge; 2 independent runs, 2026-08-10 and 2026-10-16):
+
+| Metric | Run A (Aug 10): naive | Run A: metadata-aware | Run A Δ | Run B (Oct 16, `qwen2.5:7b`): naive | Run B: metadata-aware | Run B Δ |
+|---|---|---|---|---|---|---|
+| faithfulness | 0.905 | 0.868 | -0.036 | 0.958 | 0.992 | +0.034 |
+| answer_relevancy | 0.857 | 0.827 | -0.029 | 0.841 | 0.865 | +0.024 |
+| context_precision | 0.757 | 0.549 | -0.208 | 0.785 | 0.662 | -0.122 |
+| context_recall | 1.000 | 1.000 | +0.000 | 0.993 | 1.000 | +0.007 |
+
+**How to read this honestly:** the two runs disagree on the sign of the faithfulness and answer-relevancy deltas, and both differences are small relative to the noise of an 8B local judge on 12 questions, so I do **not** claim a measured end-to-end quality win from section-aware chunking. Two things are consistent across both runs: `context_recall` is saturated (~1.0) for both chunkers on this small corpus, and `context_precision` is *lower* for metadata-aware chunking (more, smaller chunks put more marginal chunks into the retrieved set). What the change does guarantee is structural: a chunk can no longer straddle two resume sections, which is proven by unit test (below), not by the RAGAS deltas. Run A's judge model was not recorded; Run B used `qwen2.5:7b`. Reproduce with `uv run scripts/ingest.py` then `uv run scripts/run_chunking_comparison.py` (tens of minutes). See [Limitations](#limitations) for why an 8B local judge's absolute scores aren't comparable to GPT-4-judged benchmarks.
 
 A synthetic unit test also encodes the bug directly: `tests/unit/test_naive_chunking.py::test_naive_chunker_straddles_section_boundary` constructs a fixture where naive chunking demonstrably merges two sections into one chunk, and `tests/unit/test_chunking.py::test_chunks_never_straddle_a_section_boundary` proves the metadata-aware chunker cannot do this.
 
@@ -138,7 +147,7 @@ Two mechanisms were implemented for real and benchmarked honestly — including 
 | naive | 25 | 16.4KB | 75.0KB | 91.4KB |
 | metadata-aware | 54 | 14.7KB | 162.0KB | 176.7KB |
 
-Metadata-aware chunking here uses **more** storage than naive, not less — because respecting section boundaries prevents the splitter from merging short adjacent sections into one chunk, producing more (smaller) chunks and therefore more embeddings. This is the real, honest tradeoff: the retrieval-quality gain from section-aware chunking (see the RAGAS table above) is paid for partly in embedding storage, not free. (Regenerate with `uv run scripts/run_benchmark.py`; requires `scripts/ingest.py` to have populated both collections first.)
+Metadata-aware chunking here uses **more** storage than naive, not less — because respecting section boundaries prevents the splitter from merging short adjacent sections into one chunk, producing more (smaller) chunks and therefore more embeddings. This is the real, honest tradeoff: the structural guarantee of section-aware chunking (no chunk spans two sections) is paid for partly in embedding storage, not free; the RAGAS table above does not show a decisive retrieval-quality gain to offset it on this corpus. (Regenerate with `uv run scripts/run_benchmark.py`; requires `scripts/ingest.py` to have populated both collections first.)
 
 ## Quickstart
 
