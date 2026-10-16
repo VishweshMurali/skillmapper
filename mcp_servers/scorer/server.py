@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 from mcp.server.mcpserver import MCPServer
-
 from score_comparison_tool import score_comparison as _score_comparison
+
 from skillmapper.models import EvidenceItem
 from skillmapper.orchestration import session_log
 from skillmapper.orchestration.schemas import ScoreResult

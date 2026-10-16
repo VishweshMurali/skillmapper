@@ -14,7 +14,12 @@ with warnings.catch_warnings():
     # ragas.metrics.collections as of 0.4.x, but still supported and is
     # what evaluate() expects here -- mirrors eval/ragas_harness.py.
     warnings.simplefilter("ignore", DeprecationWarning)
-    from ragas.metrics import AnswerRelevancy, ContextPrecision, ContextRecall, Faithfulness
+    from ragas.metrics import (
+        AnswerRelevancy,
+        ContextPrecision,
+        ContextRecall,
+        Faithfulness,
+    )
 
 from skillmapper.agent.llm import get_llm
 from skillmapper.config import settings

@@ -1,6 +1,6 @@
 # SkillMapper
 
-An agentic RAG system that compares resumes against job descriptions, retrieves supporting evidence via hybrid search, and produces structured evaluation results with human-in-the-loop escalation for low-confidence cases. Exposed as an MCP server with 5 tools, plus a Streamlit reviewer UI.
+An agentic RAG system that compares resumes against job descriptions, retrieves supporting evidence via hybrid search, and produces structured evaluation results with human-in-the-loop escalation for low-confidence cases. Exposed two ways -- a single consolidated MCP server (5 tools, in-process LangGraph agent) and an alternate 5-server MCP architecture (one server per pipeline stage, driven by an orchestrator client) -- plus a shared Streamlit reviewer UI.
 
 Runs entirely locally against [Ollama](https://ollama.com) (`llama3.1:8b` for generation, `nomic-embed-text` for embeddings) — no paid API keys required.
 
@@ -40,6 +40,70 @@ Runs entirely locally against [Ollama](https://ollama.com) (`llama3.1:8b` for ge
    └───────────────────────────────────────────────────────┘
 ```
 
+### Alternate: 5-server MCP architecture
+
+`mcp_servers/` ports the same retry/escalate semantics to five standalone MCP servers -- one per pipeline stage -- driven by an orchestrator client (`scripts/run_orchestrator.py`) instead of in-process LangGraph nodes. It's a parallel implementation, not a replacement: both architectures share the same hybrid retriever, SQLite repo, and Streamlit app, and both are actively tested (see [Repo layout](#repo-layout)).
+
+```
+    ┌────────────────────────────────────────────────────────────────┐
+    │ Orchestrator client (scripts/run_orchestrator.py)              │
+    │ spawns + drives 5 servers over stdio, per session               │
+    └────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │ jd-parser: parse_jd(job_id)                                     │
+    │ -> requirement_blocks                                           │
+    └────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │ for each requirement block:                                     │
+    │ rag-router: decide_retrieval(retry_count)                       │
+    │ -> hybrid retriever (BM25 + Chroma, RRF) -> evidence             │
+    └────────────────────────────────────────────────────────────────┘
+                                     │
+                              (all evidence)
+                                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │ resume-comparator: compare_resume_jd                            │
+    │ -> verdict, matched/missing skills, self-reported confidence    │
+    └────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │ scorer: score_comparison(evidence, self_reported_confidence)    │
+    │ -> confidence                                                   │
+    └────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+    confidence >= threshold?
+      ├─ yes ─────────────────────────────────────────────────► completed
+      ├─ no, retries left ──► retry_count++, loop back to rag-router
+      └─ no, retries exhausted ─────────────────────────────────► escalated
+                                     │
+                                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │ SQLite repo (same repo as the LangGraph path above)             │
+    │ + data/sessions/<session_id>.jsonl event log                    │
+    │ -> feeds the same Streamlit reviewer app                        │
+    └────────────────────────────────────────────────────────────────┘
+                                     │
+                         (optional --eval flag)
+                                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │ ragas-eval: run_ragas_eval(session_id)                          │
+    │ re-judges the session's JSONL log after the fact                │
+    └────────────────────────────────────────────────────────────────┘
+```
+
+Run it the same way as the LangGraph path:
+
+```bash
+uv run scripts/run_orchestrator.py resume-01-senior-swe-backend job-01-swe-backend
+uv run scripts/run_orchestrator.py resume-01-senior-swe-backend job-01-swe-backend --eval  # + RAGAS-score the session
+```
+
 ### Why these choices
 
 - **Custom LangGraph `StateGraph`, not `create_react_agent`.** The agent needs an explicit retry counter (widening `k` on each attempt, not repeating the same call) and a terminal escalate-to-human path. The prebuilt ReAct agent's fixed internal routing doesn't expose hooks for either.
@@ -55,9 +119,7 @@ Inspecting the chunker: naive whole-document sentence-splitting was cutting acro
 
 This is reproduced as a real, re-runnable comparison in this repo — not just asserted. `scripts/run_chunking_comparison.py` ingests the same corpus into two Chroma collections (naive vs. metadata-aware), runs the identical 12-question test set through both, and scores each with RAGAS under the same local judge:
 
-<!-- RAGAS_COMPARISON_TABLE -->
-
-*(Table above generated by `uv run scripts/run_chunking_comparison.py`. See [Limitations](#limitations) for why an 8B local judge's absolute scores aren't comparable to GPT-4-judged benchmarks — the delta under a fixed judge is the meaningful number here.)*
+Reproduce it with `uv run scripts/ingest.py` followed by `uv run scripts/run_chunking_comparison.py` (takes tens of minutes on a local 8B judge; results are cached under `data/cache/` and shown in the Streamlit app's Model Evaluation tab). Scores are not committed to the repo because they depend on your local hardware and judge model. See [Limitations](#limitations) for why an 8B local judge's absolute scores aren't comparable to GPT-4-judged benchmarks — the delta under a fixed judge is the meaningful number here.
 
 A synthetic unit test also encodes the bug directly: `tests/unit/test_naive_chunking.py::test_naive_chunker_straddles_section_boundary` constructs a fixture where naive chunking demonstrably merges two sections into one chunk, and `tests/unit/test_chunking.py::test_chunks_never_straddle_a_section_boundary` proves the metadata-aware chunker cannot do this.
 
@@ -163,9 +225,17 @@ src/skillmapper/
   review_app/              Streamlit UI: Documents (browse/upload/edit), Retrieval (search tester),
                              Score (on-demand agent run), Escalation Queue, History
   eval/                    RAGAS harness, testset, chunking comparison, benchmark, report formatting
-scripts/                   CLI entry points for each of the above
-tests/unit/                fast, fully mocked
-tests/integration/         marked slow/ollama, require a real local Ollama
+  orchestration/           shared schemas + JSONL session-event log used by the 5-server architecture
+mcp_servers/                the alternate 5-server MCP architecture (see above), one dir per server:
+  jd-parser/                 parse_jd
+  rag-router/                 decide_retrieval (wraps the same hybrid retriever)
+  resume-comparator/          compare_resume_jd
+  scorer/                     score_comparison
+  ragas-eval/                 run_ragas_eval (scores a session's JSONL log)
+  orchestrator/               client that spawns + drives the 5 servers over stdio
+scripts/                   CLI entry points for each of the above, incl. run_orchestrator.py
+tests/unit/                fast, fully mocked (incl. tests/unit/mcp_servers/ for the 5-server tools)
+tests/integration/         marked slow/ollama, require a real local Ollama (incl. the 5-server e2e path)
 data/synthetic/            8 synthetic resumes + 3 job descriptions (author-generated, fictitious)
 ```
 
@@ -175,3 +245,7 @@ data/synthetic/            8 synthetic resumes + 3 job descriptions (author-gene
 - **`compare_resume_to_job` is slow** (30s-minutes) on local hardware — there's no async job-polling API, just a SQLite short-circuit on repeat calls.
 - **Single-user SQLite**, no auth on the Streamlit app — fine for a local portfolio demo, not for multi-tenant use.
 - **Synthetic corpus is small** (8 resumes, 3 JDs) — enough to demonstrate the retrieval/chunking/agent mechanics honestly, not a claim about performance at scale.
+
+## License
+
+MIT -- see [LICENSE](LICENSE).

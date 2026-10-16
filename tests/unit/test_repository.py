@@ -3,14 +3,14 @@ from skillmapper.storage import repository
 
 
 def _sample_result(**overrides) -> EvaluationResult:
-    defaults = dict(
-        resume_id="resume-01",
-        job_id="job-01",
-        verdict="strong_match",
-        overall_score=0.82,
-        matched_skills=["Python", "Kubernetes"],
-        missing_skills=["Go"],
-        evidence=[
+    defaults = {
+        "resume_id": "resume-01",
+        "job_id": "job-01",
+        "verdict": "strong_match",
+        "overall_score": 0.82,
+        "matched_skills": ["Python", "Kubernetes"],
+        "missing_skills": ["Go"],
+        "evidence": [
             EvidenceItem(
                 chunk_id="resume-01::skills::0",
                 doc_id="resume-01",
@@ -20,11 +20,11 @@ def _sample_result(**overrides) -> EvaluationResult:
                 supports_requirement="Strong proficiency in Python or Go",
             )
         ],
-        reasoning="Strong overlap on core requirements.",
-        confidence=0.78,
-        status="completed",
-        retries_used=0,
-    )
+        "reasoning": "Strong overlap on core requirements.",
+        "confidence": 0.78,
+        "status": "completed",
+        "retries_used": 0,
+    }
     defaults.update(overrides)
     return EvaluationResult(**defaults)
 

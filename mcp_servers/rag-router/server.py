@@ -9,9 +9,9 @@ os.environ.setdefault("PYTHONUTF8", "1")
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
+from decide_retrieval_tool import decide_retrieval as _decide_retrieval
 from mcp.server.mcpserver import MCPServer
 
-from decide_retrieval_tool import decide_retrieval as _decide_retrieval
 from skillmapper.ingestion.pipeline import bm25_path_for
 from skillmapper.orchestration import session_log
 from skillmapper.orchestration.schemas import DecideRetrievalResult

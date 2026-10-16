@@ -5,7 +5,6 @@ import uuid
 from skillmapper.config import settings
 from skillmapper.models import EvaluationResult
 from skillmapper.storage import repository
-
 from skillmapper_orchestrator.client import OrchestratorClients
 from skillmapper_orchestrator.server_specs import TOOL_TIMEOUTS
 

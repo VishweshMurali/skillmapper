@@ -8,9 +8,9 @@ Run with: uv run pytest -m "ollama and slow" tests/integration
 from __future__ import annotations
 
 import pytest
+from skillmapper_orchestrator.cli import run
 
 from skillmapper.orchestration.session_log import read_session, session_log_path
-from skillmapper_orchestrator.cli import run
 
 pytestmark = [pytest.mark.ollama, pytest.mark.slow]
 

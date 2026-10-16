@@ -6,6 +6,8 @@ scripts/run_chunking_comparison.py, not here (it takes tens of minutes).
 Run with: uv run pytest -m ollama tests/integration
 """
 
+import math
+
 import pytest
 
 from skillmapper.eval.ragas_harness import run_ragas_eval
@@ -21,4 +23,4 @@ def test_ragas_harness_runs_on_a_small_subset():
     scores = aggregate_scores(result)
     assert set(scores) == {"faithfulness", "answer_relevancy", "context_precision", "context_recall"}
     for value in scores.values():
-        assert value != value or 0.0 <= value <= 1.0  # allow NaN, else must be in [0,1]
+        assert math.isnan(value) or 0.0 <= value <= 1.0  # allow NaN, else must be in [0,1]

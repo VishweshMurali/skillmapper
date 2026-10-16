@@ -9,9 +9,9 @@ os.environ.setdefault("PYTHONUTF8", "1")
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
+from compare_resume_jd_tool import compare_resume_jd as _compare_resume_jd
 from mcp.server.mcpserver import MCPServer
 
-from compare_resume_jd_tool import compare_resume_jd as _compare_resume_jd
 from skillmapper.agent.llm import ChatOllama, get_llm
 from skillmapper.config import settings
 from skillmapper.ingestion.loaders import load_all_job_descriptions, load_all_resumes

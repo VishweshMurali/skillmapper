@@ -21,7 +21,11 @@ import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from skillmapper.orchestration.session_log import SessionEvent, append_event, session_log_path
+from skillmapper.orchestration.session_log import (
+    SessionEvent,
+    append_event,
+    session_log_path,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MCP_SERVERS_DIR = REPO_ROOT / "mcp_servers"
@@ -33,7 +37,7 @@ async def test_jd_parser_server_parse_jd_round_trips():
         params = StdioServerParameters(
             command=sys.executable, args=[str(MCP_SERVERS_DIR / "jd-parser" / "server.py")]
         )
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(params) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
@@ -68,7 +72,7 @@ async def test_scorer_server_score_comparison_round_trips():
         params = StdioServerParameters(
             command=sys.executable, args=[str(MCP_SERVERS_DIR / "scorer" / "server.py")]
         )
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(params) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
@@ -95,7 +99,7 @@ async def test_rag_router_server_decide_retrieval_round_trips():
         params = StdioServerParameters(
             command=sys.executable, args=[str(MCP_SERVERS_DIR / "rag-router" / "server.py")]
         )
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(params) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
@@ -135,7 +139,7 @@ async def test_resume_comparator_server_compare_resume_jd_round_trips():
         params = StdioServerParameters(
             command=sys.executable, args=[str(MCP_SERVERS_DIR / "resume-comparator" / "server.py")]
         )
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(params) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
@@ -175,7 +179,7 @@ async def test_ragas_eval_server_run_ragas_eval_and_eval_logs_round_trip():
         params = StdioServerParameters(
             command=sys.executable, args=[str(MCP_SERVERS_DIR / "ragas-eval" / "server.py")]
         )
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(params) as (read, write):  # noqa: SIM117
             async with ClientSession(read, write) as session:
                 await session.initialize()
 

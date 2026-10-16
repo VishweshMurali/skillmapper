@@ -6,7 +6,6 @@ import time
 
 from skillmapper.models import EvaluationResult
 from skillmapper.storage import repository
-
 from skillmapper_orchestrator.client import connect_all
 from skillmapper_orchestrator.retry_loop import run_session
 from skillmapper_orchestrator.server_specs import TOOL_TIMEOUTS

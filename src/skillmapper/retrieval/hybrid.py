@@ -38,9 +38,7 @@ def _matches_filter(
         return False
     if doc_id is not None and metadata.get("doc_id") != doc_id:
         return False
-    if section is not None and metadata.get("section") != section:
-        return False
-    return True
+    return not (section is not None and metadata.get("section") != section)
 
 
 def _reciprocal_rank_fusion(

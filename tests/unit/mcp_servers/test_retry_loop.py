@@ -72,7 +72,7 @@ async def test_escalates_after_max_retries_when_confidence_never_recovers(monkey
     saved = _stub_repository(monkeypatch)
     clients = FakeClients(confidence_sequence=[0.1, 0.1, 0.1])
 
-    session_id, result = await run_session(
+    _session_id, result = await run_session(
         clients, "r1", "j1", threshold=0.65, max_retries=2
     )
 

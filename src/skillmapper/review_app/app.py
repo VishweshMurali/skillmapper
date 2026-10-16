@@ -515,7 +515,7 @@ def _render_evaluation_tab():
             )
 
         st.caption(
-            f"Cached {datetime.fromtimestamp(generated_at):%Y-%m-%d %H:%M} · local "
+            f"Cached {datetime.fromtimestamp(generated_at).astimezone():%Y-%m-%d %H:%M} · local "
             "`llama3.1:8b` judge -- treat these as directional deltas between the two "
             "chunkers under the *same* judge, not absolute or GPT-4-comparable scores."
         )

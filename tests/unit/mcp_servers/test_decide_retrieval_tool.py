@@ -7,7 +7,7 @@ class FakeRetriever:
         self.calls = []
 
     def search(self, query, k, doc_type=None, doc_id=None, section=None):
-        self.calls.append(dict(query=query, k=k, doc_type=doc_type, doc_id=doc_id, section=section))
+        self.calls.append({"query": query, "k": k, "doc_type": doc_type, "doc_id": doc_id, "section": section})
         return self.hits
 
 

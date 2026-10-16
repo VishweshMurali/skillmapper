@@ -53,7 +53,7 @@ def generate_comparison(
     try:
         result = structured_llm.invoke(prompt)
         return result if isinstance(result, ComparisonDraft) else ComparisonDraft(**result)
-    except Exception:  # noqa: BLE001 -- deliberately broad, see docstring
+    except Exception:  # noqa: BLE001, S110 -- deliberately broad, see docstring
         pass
 
     last_error: Exception | None = None

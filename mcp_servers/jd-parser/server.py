@@ -12,8 +12,8 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger(__name__)
 
 from mcp.server.mcpserver import MCPServer
-
 from parse_jd_tool import parse_jd as _parse_jd
+
 from skillmapper.config import settings
 from skillmapper.orchestration import session_log
 from skillmapper.orchestration.schemas import ParseJdResult

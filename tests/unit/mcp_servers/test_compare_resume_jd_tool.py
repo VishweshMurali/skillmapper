@@ -9,10 +9,10 @@ JOB = JobDescription(id="j1", title="Engineer", company="Acme", source_path="y",
 
 
 def _stub_generate_comparison(monkeypatch, **overrides):
-    defaults = dict(
-        verdict="partial_match", overall_score=0.5, matched_skills=["Python"],
-        missing_skills=[], reasoning="stub reasoning", self_reported_confidence=0.5,
-    )
+    defaults = {
+        "verdict": "partial_match", "overall_score": 0.5, "matched_skills": ["Python"],
+        "missing_skills": [], "reasoning": "stub reasoning", "self_reported_confidence": 0.5,
+    }
     defaults.update(overrides)
 
     captured = {}
