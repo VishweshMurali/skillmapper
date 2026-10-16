@@ -127,7 +127,7 @@ A synthetic unit test also encodes the bug directly: `tests/unit/test_naive_chun
 
 Two mechanisms were implemented for real and benchmarked honestly — including where the numbers didn't match initial assumptions:
 
-**Embedding cache** (content-hash + query/document-role keyed, via `diskcache`): a clear, dramatic win. Re-embedding the same 8 texts with a warm cache took **essentially 0s vs. 2.7s cold** (measured with `scripts/run_benchmark.py`) — a >6000x speedup, since a cache hit skips the Ollama round-trip entirely.
+**Embedding cache** (content-hash + query/document-role keyed, via `diskcache`): a clear, dramatic win. Re-embedding the same 8 texts with a warm cache took **essentially 0s vs. 2.7s cold** (measured with `scripts/run_benchmark.py`) — a >6000x speedup, since a cache hit skips the Ollama round-trip entirely. (Re-run on a later date it was ~25s cold vs. 0.00s warm: the cold figure varies with whether Ollama had the embedding model loaded, but the warm path is always effectively free.)
 
 **Async parallel embedding** (`asyncio.gather` + `asyncio.Semaphore` fan-out, used by the agent's `retrieve` node when it queries once per JD requirement): measured **no speedup** in this environment (serial and concurrency=4 both took ~2.4s for 8 texts). This local Ollama install processes embedding requests serially by default (`OLLAMA_NUM_PARALLEL` is typically 1 unless explicitly reconfigured), so concurrent requests queue rather than overlap. The code path is real and correctly bounded (verified in `tests/unit/test_embedding_cache.py`), but on this machine the cache — not the parallelism — is what actually reduces latency. This is reported as measured, not adjusted to match a target number.
 
@@ -240,6 +240,9 @@ data/synthetic/            8 synthetic resumes + 3 job descriptions (author-gene
 ```
 
 ## Limitations
+
+- **The agent's "confidence" measures retrieval coverage, not correctness.** It is `0.3 x` the LLM's self-reported confidence plus `0.7 x` the fraction of job requirements for which retrieval returned at least one chunk above a score threshold. A clearly weak match can therefore still score high confidence (a data-analyst resume against an ML-engineer job came back `weak_match` with confidence 0.94) because evidence was *found* for every requirement, even though it showed the candidate lacks them. Treat `verdict` / `overall_score` as the assessment and `confidence` as "was there evidence to reason over"; the human-escalation path mainly catches retrieval gaps, not wrong verdicts.
+- **Model choice affects results.** The documented setup is `llama3.1:8b`. The full suite (unit + all 11 Ollama integration tests) was also verified end to end with `qwen2.5:7b` by setting `OLLAMA_LLM_MODEL=qwen2.5:7b` in `.env`; scores and wording differ between models.
 
 - **RAGAS judge is a local 8B model, not GPT-4.** Scores are noisier and not directly comparable to published GPT-4-judged benchmarks. The chunking-comparison story is built around the *delta* between naive and metadata-aware chunking under the same fixed judge, which is judge-independent in a way absolute scores aren't.
 - **`compare_resume_to_job` is slow** (30s-minutes) on local hardware — there's no async job-polling API, just a SQLite short-circuit on repeat calls.
